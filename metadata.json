@@ -1,0 +1,8 @@
+{
+  "name": "FamilyChores",
+  "description": "De ultieme quest-app voor gezinnen waar kids helden worden!",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": []
+}

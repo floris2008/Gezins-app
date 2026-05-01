@@ -1,0 +1,131 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Information about a family member",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["parent", "child"] },
+        "points": { "type": "number" },
+        "householdId": { "type": "string" },
+        "targetRewardId": { "type": "string" },
+        "email": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "role", "points", "email"]
+    },
+    "Household": {
+      "title": "Household",
+      "description": "A family unit",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "adminId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "inviteCode", "adminId"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A chore or task for points",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "points": { "type": "number" },
+        "type": { "type": "string", "enum": ["individual", "first_come"] },
+        "distributionType": { "type": "string", "enum": ["first_to_finish", "everyone_must"] },
+        "householdId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "in_progress", "pending", "completed"] },
+        "completedBy": { "type": "string" },
+        "claimedBy": { "type": "string" },
+        "completedByList": { "type": "array", "items": { "type": "string" } },
+        "photoURL": { "type": "string" },
+        "proofUrl": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "icon": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "points", "type", "householdId", "status"]
+    },
+    "Reward": {
+      "title": "Reward",
+      "description": "A prize to redeem with points",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "cost": { "type": "number" },
+        "householdId": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "icon": { "type": "string" },
+        "category": { "type": "string" },
+        "isSuggestion": { "type": "boolean" },
+        "suggestedBy": { "type": "string" },
+        "suggestedByPhoto": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "usageType": { "type": "string", "enum": ["once", "always"] },
+        "claimed": { "type": "boolean" },
+        "claimedBy": { "type": "string" },
+        "claimedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "cost", "householdId"]
+    },
+    "History": {
+      "title": "History",
+      "description": "Log of point transactions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "householdId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["earn", "spend", "adj"] },
+        "description": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "householdId", "amount", "type", "timestamp"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Alert for users",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "householdId": { "type": "string" },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "householdId", "message", "read", "timestamp"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "households/{householdId}": {
+      "schema": "Household",
+      "description": "Household information"
+    },
+    "tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Available and completed tasks"
+    },
+    "rewards/{rewardId}": {
+      "schema": "Reward",
+      "description": "Reward items in the shop"
+    },
+    "history/{historyId}": {
+      "schema": "History",
+      "description": "Transaction logs"
+    },
+    "notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications"
+    }
+  }
+}
