@@ -212,8 +212,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
           updatedAt: serverTimestamp()
         });
       } else {
-        const { deleteDoc, doc: firestoreDoc } = await import('firebase/firestore');
-        await deleteDoc(firestoreDoc(db, 'tasks', taskId));
+        await deleteDoc(doc(db, 'tasks', taskId));
       }
       setRecyclingTask(null);
     } catch (err) {
@@ -724,7 +723,6 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
               onDelete={async (id) => {
                 // Parents can delete tasks from here
                 try {
-                  const { deleteDoc, doc } = await import('firebase/firestore');
                   await deleteDoc(doc(db, 'tasks', id));
                   setSelectedTask(null);
                 } catch (err) {

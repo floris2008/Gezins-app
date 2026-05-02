@@ -202,9 +202,8 @@ export function Tasks() {
 
         // Notify parents that a task is ready for review
         const parents = members.filter(m => m.role === 'parent');
-        const { addDoc, collection: firestoreCollection } = await import('firebase/firestore');
         for (const parent of parents) {
-          await addDoc(firestoreCollection(db, 'notifications'), {
+          await addDoc(collection(db, 'notifications'), {
             userId: parent.id,
             householdId: profile.householdId,
             message: `🔔 ${profile.displayName} heeft de quest "${task.title}" voltooid en wacht op goedkeuring!`,
@@ -224,8 +223,6 @@ export function Tasks() {
   const handleApprove = async (task: Task) => {
     if (profile?.role !== 'parent') return;
     try {
-      const { increment, addDoc, collection: firestoreCollection } = await import('firebase/firestore');
-      
       if (task.completedBy) {
         // 1. Give points to child
         await updateDoc(doc(db, 'users', task.completedBy), {
@@ -233,7 +230,7 @@ export function Tasks() {
         });
 
         // 2. Add to history
-        await addDoc(firestoreCollection(db, 'history'), {
+        await addDoc(collection(db, 'history'), {
           userId: task.completedBy,
           householdId: profile.householdId,
           amount: task.points,
@@ -243,7 +240,7 @@ export function Tasks() {
         });
 
         // 3. Notify child
-        await addDoc(firestoreCollection(db, 'notifications'), {
+        await addDoc(collection(db, 'notifications'), {
           userId: task.completedBy,
           householdId: profile.householdId,
           message: `Hoera! Je quest "${task.title}" is goedgekeurd. Je hebt ${task.points} XP gekregen! 🏆`,
@@ -255,7 +252,7 @@ export function Tasks() {
         const otherParents = members.filter(m => m.role === 'parent' && m.id !== profile.id);
         const child = members.find(m => m.id === task.completedBy);
         for (const p of otherParents) {
-          await addDoc(firestoreCollection(db, 'notifications'), {
+          await addDoc(collection(db, 'notifications'), {
             userId: p.id,
             householdId: profile.householdId,
             message: `📢 Quest "${task.title}" van ${child?.displayName} is goedgekeurd door ${profile.displayName}.`,

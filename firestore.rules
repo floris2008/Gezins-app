@@ -88,10 +88,10 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn() && resource.data.householdId == getProfile(request.auth.uid).householdId;
       allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && (
-        // Action: Join Household
-        (incoming().diff(existing()).affectedKeys().hasOnly(['householdId']) && isValidUser(incoming())) ||
-        // Action: Update Points
+      allow update: if (isOwner(userId) || (isParent() && existing().householdId == getProfile(request.auth.uid).householdId)) && (
+        // Action: Join Household (Self)
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['householdId']) && isValidUser(incoming())) ||
+        // Action: Update Points/Target (Owner or Parent)
         (incoming().diff(existing()).affectedKeys().hasAny(['points', 'targetRewardId']) && isValidUser(incoming()))
       );
     }
