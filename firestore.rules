@@ -6,219 +6,135 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // --- Helpers ---
-    function isSignedIn() {
-      return request.auth != null && request.auth.token.email_verified == true;
-    }
-
-    function getUserData(userId) {
+    // 0.1 Global Helpers
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // Get user profile once for role/household checks
+    function getProfile(userId) {
       return get(/databases/$(database)/documents/users/$(userId)).data;
     }
-
-    function isMemberOf(householdId) {
-      return isSignedIn() && getUserData(request.auth.uid).get('householdId', '') == householdId;
-    }
-
+    
     function isParent() {
-      return isSignedIn() && getUserData(request.auth.uid).get('role', '') == 'parent';
+      return isSignedIn() && getProfile(request.auth.uid).role == 'parent';
+    }
+    
+    function isInHousehold(householdId) {
+      return isSignedIn() && getProfile(request.auth.uid).householdId == householdId;
     }
 
-    function isParentOf(householdId) {
-      return isParent() && getUserData(request.auth.uid).get('householdId', '') == householdId;
-    }
+    // 1. Validation Blueprints
 
-    function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- Validation Helpers ---
     function isValidUser(data) {
-      return data.keys().hasAll(['displayName', 'role', 'points', 'email']) &&
-             data.displayName is string && data.displayName.size() <= 100 &&
-             data.role in ['parent', 'child'] &&
-             data.points is number &&
-             (data.get('targetRewardId', null) == null || isValidId(data.targetRewardId));
+      return data.keys().hasAll(['displayName', 'role', 'points', 'email'])
+        && data.displayName is string && data.displayName.size() <= 100
+        && data.role in ['parent', 'child']
+        && data.points is number
+        && data.email is string && data.email.size() <= 256
+        && (!data.keys().hasAny(['householdId']) || data.householdId is string)
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL is string)
+        && (!data.keys().hasAny(['targetRewardId']) || data.targetRewardId is string);
     }
 
     function isValidHousehold(data) {
-      return data.keys().hasAll(['name', 'inviteCode', 'adminId']) &&
-             data.name is string && data.name.size() <= 100 &&
-             data.inviteCode is string && data.inviteCode.size() == 6 &&
-             data.adminId == request.auth.uid;
+      return data.keys().hasAll(['name', 'inviteCode', 'adminId', 'createdAt'])
+        && data.name is string && data.name.size() <= 100
+        && data.inviteCode is string && data.inviteCode.size() <= 20
+        && data.adminId == request.auth.uid
+        && data.createdAt == request.time;
     }
 
     function isValidTask(data) {
-      return data.keys().hasAll(['title', 'points', 'type', 'status', 'householdId']) &&
-             data.title is string && data.title.size() <= 200 &&
-             data.points is number && data.points >= 0 &&
-             data.type in ['individual', 'first_come'] &&
-             data.status in ['active', 'in_progress', 'pending', 'completed'] &&
-             data.householdId is string &&
-             (data.get('distributionType', null) == null || data.distributionType in ['first_to_finish', 'everyone_must']) &&
-             (data.get('claimedBy', null) == null || isValidId(data.claimedBy));
+      return data.keys().hasAll(['title', 'points', 'type', 'householdId', 'status', 'updatedAt'])
+        && data.title is string && data.title.size() <= 200
+        && data.points is number && data.points >= 0
+        && data.type in ['individual', 'first_come']
+        && data.householdId is string
+        && data.status in ['active', 'in_progress', 'pending', 'completed']
+        && data.updatedAt == request.time;
     }
 
     function isValidReward(data) {
-      return data.keys().hasAll(['title', 'cost', 'householdId']) &&
-             data.title is string && data.title.size() <= 200 &&
-             data.cost is number && data.cost >= 0 &&
-             data.householdId is string &&
-             (data.get('isSuggestion', false) is bool) &&
-             (data.get('status', 'approved') in ['pending', 'approved', 'rejected']) &&
-             (data.get('usageType', 'always') in ['once', 'always']);
+      return data.keys().hasAll(['title', 'cost', 'householdId'])
+        && data.title is string && data.title.size() <= 200
+        && data.cost is number && data.cost >= 0
+        && data.householdId is string;
     }
 
     function isValidHistory(data) {
-      return data.keys().hasAll(['userId', 'householdId', 'amount', 'type', 'timestamp']) &&
-             data.userId is string &&
-             data.householdId is string &&
-             data.amount is number &&
-             data.type in ['earn', 'spend', 'adj'] &&
-             data.timestamp == request.time;
+      return data.keys().hasAll(['userId', 'householdId', 'amount', 'type', 'description', 'timestamp'])
+        && data.userId == request.auth.uid
+        && data.householdId is string
+        && data.amount is number
+        && data.type in ['earn', 'spend', 'adj']
+        && data.description is string && data.description.size() <= 500
+        && data.timestamp == request.time;
     }
 
-    // --- Rules ---
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'householdId', 'message', 'read', 'timestamp'])
+        && data.householdId is string
+        && data.message is string && data.message.size() <= 500
+        && data.read is bool
+        && data.timestamp == request.time;
+    }
 
-    // Users
+    // 2. Collection Rules
+
     match /users/{userId} {
-      allow get: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || (resource.data.get('householdId', null) != null && isMemberOf(resource.data.householdId)));
-      allow list: if isSignedIn() && (resource.data.householdId == getUserData(request.auth.uid).householdId);
-      
-      allow create: if isSignedIn() && isValidId(userId) && userId == request.auth.uid && 
-                       isValidUser(incoming()) && 
-                       incoming().email == request.auth.token.email &&
-                       incoming().points == 0;
-      
-      allow update: if isSignedIn() && isValidId(userId) && (
-        // Case 1: Owner updates profile
-        (request.auth.uid == userId && 
-         incoming().email == existing().email &&
-         incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'householdId', 'targetRewardId', 'updatedAt']) &&
-         (existing().get('householdId', null) == null || incoming().householdId == existing().householdId)) ||
-        
-        // Case 2: Parent updates points/role/anything
-        (isParentOf(existing().householdId) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['points', 'role', 'displayName', 'photoURL', 'updatedAt']) &&
-         (incoming().get('role', 'child') in ['parent', 'child']) &&
-         (incoming().get('points', 0) is number)) ||
-
-        // Case 3: Child spends points
-        (request.auth.uid == userId && 
-         incoming().get('points', existing().points) <= existing().points && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['points', 'updatedAt']))
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.householdId == getProfile(request.auth.uid).householdId;
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && (
+        // Action: Join Household
+        (incoming().diff(existing()).affectedKeys().hasOnly(['householdId']) && isValidUser(incoming())) ||
+        // Action: Update Points
+        (incoming().diff(existing()).affectedKeys().hasAny(['points', 'targetRewardId']) && isValidUser(incoming()))
       );
     }
 
-    // Households
     match /households/{householdId} {
-      allow get: if isSignedIn() && isValidId(householdId) && (isMemberOf(householdId) || existing().inviteCode != null);
-      allow list: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(householdId) && isValidHousehold(incoming());
-      allow update: if isSignedIn() && isValidId(householdId) && isParentOf(householdId) && (incoming().get('adminId', existing().adminId) == existing().adminId);
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && isValidHousehold(incoming());
+      allow update: if isSignedIn() && (existing().adminId == request.auth.uid || isParent()) && isValidHousehold(incoming());
     }
 
-    // Tasks
     match /tasks/{taskId} {
-      allow get, list: if isSignedIn() && isMemberOf(resource.data.householdId);
-      
-      allow create: if isSignedIn() && isValidId(taskId) && isParentOf(incoming().householdId) && isValidTask(incoming());
-      allow update: if isSignedIn() && isValidId(taskId) && (
-        (isParentOf(existing().householdId) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'points', 'type', 'distributionType', 'status', 'completedBy', 'claimedBy', 'proofUrl', 'imageUrl', 'icon', 'updatedAt', 'assignedTo', 'requiresProof', 'emoji']) &&
-         (incoming().get('status', 'active') in ['active', 'in_progress', 'pending', 'completed'])) ||
-        (isMemberOf(existing().householdId) && (
-           // Action: Claim
-           (existing().status == 'active' && 
-            incoming().status == 'in_progress' &&
-            incoming().claimedBy == request.auth.uid &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'claimedBy', 'updatedAt'])) ||
-           
-           // Action: Unclaim
-           (existing().status == 'in_progress' && 
-            existing().claimedBy == request.auth.uid &&
-            incoming().status == 'active' &&
-            incoming().claimedBy == null &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'claimedBy', 'updatedAt'])) ||
-
-           // Action: Complete from active (Individual/First-come)
-           (existing().status == 'active' &&
-            incoming().status == 'pending' &&
-            incoming().completedBy == request.auth.uid &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedBy', 'claimedBy', 'proofUrl', 'updatedAt'])) ||
-
-           // Action: Complete from in_progress (Individual/First-come)
-           (existing().status == 'in_progress' &&
-            existing().claimedBy == request.auth.uid &&
-            incoming().status == 'pending' &&
-            incoming().completedBy == request.auth.uid &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'completedBy', 'claimedBy', 'proofUrl', 'updatedAt'])) ||
-           
-           // Action: Everyone must do task completion (add self to list)
-           (existing().distributionType == 'everyone_must' &&
-            incoming().completedByList.hasAll(existing().get('completedByList', [])) &&
-            incoming().completedByList.size() == existing().get('completedByList', []).size() + 1 &&
-            incoming().completedByList.hasAll([request.auth.uid]) &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['completedByList', 'status', 'claimedBy', 'updatedAt']))
-          )
-        )
+      allow read: if isSignedIn() && resource.data.householdId == getProfile(request.auth.uid).householdId;
+      allow create: if isParent() && isValidTask(incoming()) && isInHousehold(incoming().householdId);
+      allow update: if (isParent() || isInHousehold(existing().householdId)) && (
+        // Action: Claim/Complete (Child)
+        (incoming().diff(existing()).affectedKeys().hasAny(['status', 'claimedBy', 'completedBy', 'updatedAt', 'proofUrl']) && isValidTask(incoming())) ||
+        // Action: Edit (Parent)
+        (isParent() && isValidTask(incoming()))
       );
-      allow delete: if isSignedIn() && isValidId(taskId) && isParentOf(existing().householdId);
+      allow delete: if isParent() && isInHousehold(existing().householdId);
     }
 
-    // Rewards
     match /rewards/{rewardId} {
-      allow get, list: if isSignedIn() && isMemberOf(resource.data.householdId);
-      
-      allow create: if isSignedIn() && isValidId(rewardId) && 
-                      isMemberOf(incoming().householdId) && 
-                      isValidReward(incoming()) &&
-                      (isParentOf(incoming().householdId) || 
-                       (incoming().get('isSuggestion', false) == true && incoming().status == 'pending'));
-                       
-      allow update: if isSignedIn() && isValidId(rewardId) && (
-        (isParentOf(existing().householdId) && 
-         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'cost', 'imageUrl', 'icon', 'emoji', 'category', 'isSuggestion', 'suggestedBy', 'suggestedByPhoto', 'status', 'usageType', 'claimed', 'claimedBy', 'claimedAt', 'updatedAt'])) ||
-        (isMemberOf(existing().householdId) && (
-          // Action: Buy/Claim
-          (existing().usageType == 'once' && 
-           existing().get('claimed', false) == false &&
-           incoming().claimed == true &&
-           incoming().claimedBy == request.auth.uid &&
-           incoming().diff(existing()).affectedKeys().hasOnly(['claimed', 'claimedBy', 'claimedAt'])) ||
-          // Action: Suggestion Edit (if child wants to edit their own pending suggestion - optional but good)
-          (existing().isSuggestion == true && 
-           existing().suggestedBy == getUserData(request.auth.uid).displayName &&
-           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'emoji', 'category', 'updatedAt']))
-        ))
+      allow read: if isSignedIn() && resource.data.householdId == getProfile(request.auth.uid).householdId;
+      allow create: if (isParent() || isSignedIn()) && isValidReward(incoming()) && isInHousehold(incoming().householdId);
+      allow update: if isInHousehold(existing().householdId) && (
+        // Action: Claim (Child)
+        (incoming().diff(existing()).affectedKeys().hasAny(['claimed', 'claimedBy', 'claimedAt']) && isValidReward(incoming())) ||
+        // Action: Edit (Parent)
+        (isParent() && isValidReward(incoming()))
       );
-      allow delete: if isSignedIn() && isValidId(rewardId) && (isParentOf(existing().householdId) || (existing().isSuggestion == true && existing().suggestedBy == getUserData(request.auth.uid).displayName));
+      allow delete: if isParent() && isInHousehold(existing().householdId);
     }
 
-    // History
     match /history/{historyId} {
-      allow get: if isSignedIn() && isValidId(historyId) && isMemberOf(resource.data.householdId);
-      allow list: if isSignedIn() && isMemberOf(resource.data.householdId);
-      
-      allow create: if isSignedIn() && isValidId(historyId) && (
-        (request.auth.uid == incoming().userId || isParentOf(getUserData(incoming().userId).householdId)) &&
-        isValidHistory(incoming())
-      );
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isParent()) && resource.data.householdId == getProfile(request.auth.uid).householdId;
+      allow create: if isSignedIn() && isValidHistory(incoming()) && isInHousehold(incoming().householdId);
     }
 
-    // Notifications
     match /notifications/{notificationId} {
-      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isMemberOf(resource.data.get('householdId', '')));
-      allow create: if isSignedIn() && isValidId(notificationId) && isMemberOf(incoming().householdId);
-      allow update: if isSignedIn() && isValidId(notificationId) && resource.data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
-      allow delete: if isSignedIn() && isValidId(notificationId) && resource.data.userId == request.auth.uid;
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isSignedIn() && isValidId(incoming().userId) && isInHousehold(incoming().householdId);
+      allow update: if isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
     }
   }
 }

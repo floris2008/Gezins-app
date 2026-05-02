@@ -1,8 +1,8 @@
 {
   "entities": {
     "User": {
-      "title": "User",
-      "description": "Information about a family member",
+      "title": "User Profile",
+      "description": "User account information and household context.",
       "type": "object",
       "properties": {
         "displayName": { "type": "string" },
@@ -11,14 +11,13 @@
         "points": { "type": "number" },
         "householdId": { "type": "string" },
         "targetRewardId": { "type": "string" },
-        "email": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "email": { "type": "string" }
       },
       "required": ["displayName", "role", "points", "email"]
     },
     "Household": {
       "title": "Household",
-      "description": "A family unit",
+      "description": "A group of users sharing tasks and rewards.",
       "type": "object",
       "properties": {
         "name": { "type": "string" },
@@ -26,11 +25,11 @@
         "adminId": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["name", "inviteCode", "adminId"]
+      "required": ["name", "inviteCode", "adminId", "createdAt"]
     },
     "Task": {
       "title": "Task",
-      "description": "A chore or task for points",
+      "description": "A chore or activity that earns points.",
       "type": "object",
       "properties": {
         "title": { "type": "string" },
@@ -38,6 +37,8 @@
         "points": { "type": "number" },
         "type": { "type": "string", "enum": ["individual", "first_come"] },
         "distributionType": { "type": "string", "enum": ["first_to_finish", "everyone_must"] },
+        "requiresProof": { "type": "boolean" },
+        "emoji": { "type": "string" },
         "householdId": { "type": "string" },
         "status": { "type": "string", "enum": ["active", "in_progress", "pending", "completed"] },
         "completedBy": { "type": "string" },
@@ -47,13 +48,14 @@
         "proofUrl": { "type": "string" },
         "imageUrl": { "type": "string" },
         "icon": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "assignedTo": { "type": "string" }
       },
-      "required": ["title", "points", "type", "householdId", "status"]
+      "required": ["title", "points", "type", "householdId", "status", "updatedAt"]
     },
     "Reward": {
       "title": "Reward",
-      "description": "A prize to redeem with points",
+      "description": "Something points can be spent on.",
       "type": "object",
       "properties": {
         "title": { "type": "string" },
@@ -62,6 +64,7 @@
         "householdId": { "type": "string" },
         "imageUrl": { "type": "string" },
         "icon": { "type": "string" },
+        "emoji": { "type": "string" },
         "category": { "type": "string" },
         "isSuggestion": { "type": "boolean" },
         "suggestedBy": { "type": "string" },
@@ -75,8 +78,8 @@
       "required": ["title", "cost", "householdId"]
     },
     "History": {
-      "title": "History",
-      "description": "Log of point transactions",
+      "title": "History Entry",
+      "description": "Record of points earned or spent.",
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
@@ -86,11 +89,11 @@
         "description": { "type": "string" },
         "timestamp": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "householdId", "amount", "type", "timestamp"]
+      "required": ["userId", "householdId", "amount", "type", "description", "timestamp"]
     },
     "Notification": {
       "title": "Notification",
-      "description": "Alert for users",
+      "description": "App notification for a user.",
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
@@ -103,29 +106,29 @@
     }
   },
   "firestore": {
-    "users/{userId}": {
+    "/users/{userId}": {
       "schema": "User",
-      "description": "User profiles"
+      "description": "Collection of user profiles."
     },
-    "households/{householdId}": {
+    "/households/{householdId}": {
       "schema": "Household",
-      "description": "Household information"
+      "description": "Collection of households."
     },
-    "tasks/{taskId}": {
+    "/tasks/{taskId}": {
       "schema": "Task",
-      "description": "Available and completed tasks"
+      "description": "Collection of chores and tasks."
     },
-    "rewards/{rewardId}": {
+    "/rewards/{rewardId}": {
       "schema": "Reward",
-      "description": "Reward items in the shop"
+      "description": "Collection of rewards."
     },
-    "history/{historyId}": {
+    "/history/{historyId}": {
       "schema": "History",
-      "description": "Transaction logs"
+      "description": "Collection of transactional history."
     },
-    "notifications/{notificationId}": {
+    "/notifications/{notificationId}": {
       "schema": "Notification",
-      "description": "User notifications"
+      "description": "Collection of user notifications."
     }
   }
 }

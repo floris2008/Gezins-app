@@ -1,10 +1,10 @@
 {
-  "projectId": "home-assistant-463213",
-  "appId": "1:982950289825:web:dd44111ff4f0e9744febe0",
-  "apiKey": "AIzaSyC-MHbupM8fAtxsljKsfUOD4lkVa0ynzak",
-  "authDomain": "home-assistant-463213.firebaseapp.com",
+  "projectId": "gen-lang-client-0410095983",
+  "appId": "1:791017256049:web:a98e698d7a368c3b6057d0",
+  "apiKey": "AIzaSyAgwNQ7zjaEuVml2fLVFB3MguFKirciLIM",
+  "authDomain": "gen-lang-client-0410095983.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-72d2199e-d79b-4c12-a58e-c55f6d686f9b",
-  "storageBucket": "home-assistant-463213.firebasestorage.app",
-  "messagingSenderId": "982950289825",
+  "storageBucket": "gen-lang-client-0410095983.firebasestorage.app",
+  "messagingSenderId": "791017256049",
   "measurementId": ""
 }
