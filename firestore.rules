@@ -135,6 +135,7 @@ service cloud.firestore {
       allow read: if isOwner(resource.data.userId);
       allow create: if isSignedIn() && isValidId(incoming().userId) && isInHousehold(incoming().householdId);
       allow update: if isOwner(existing().userId) && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isOwner(resource.data.userId);
     }
   }
 }

@@ -14,7 +14,10 @@ import {
   orderBy, 
   limit, 
   updateDoc, 
-  doc 
+  doc,
+  deleteDoc,
+  writeBatch,
+  getDocs
 } from 'firebase/firestore';
 import { 
   Home, 
@@ -46,6 +49,12 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [targetReward, setTargetReward] = useState<Reward | null>(null);
+
+  useEffect(() => {
+    if (profile?.id) {
+      NotificationService.requestPermission();
+    }
+  }, [profile?.id]);
 
   useEffect(() => {
     if (!profile?.targetRewardId) {
@@ -104,7 +113,6 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
 
   const deleteNotification = async (id: string) => {
     try {
-      const { deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'notifications', id));
     } catch (err) {
       console.error(err);
@@ -112,9 +120,9 @@ export function Layout({ children, currentView, onNavigate }: LayoutProps) {
   };
 
   const clearAllNotifications = async () => {
+    if (!profile?.id) return;
     try {
-      const { writeBatch, getDocs, collection, query, where } = await import('firebase/firestore');
-      const q = query(collection(db, 'notifications'), where('userId', '==', profile?.id));
+      const q = query(collection(db, 'notifications'), where('userId', '==', profile.id));
       const snap = await getDocs(q);
       const batch = writeBatch(db);
       snap.docs.forEach(d => batch.delete(d.ref));

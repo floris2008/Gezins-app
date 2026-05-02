@@ -8,8 +8,9 @@ import { useAuth } from '../hooks/useAuth';
 import { db, handleFirestoreError } from '../lib/firebase';
 import { doc, setDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { UserRole, OperationType } from '../types';
-import { Home, Users, ArrowRight, CheckCircle2, Sparkles } from 'lucide-react';
+import { Home, Users, ArrowRight, CheckCircle2, Sparkles, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { NotificationService } from '../services/NotificationService';
 
 export function Onboarding() {
   const { user, refreshProfile } = useAuth();
@@ -66,6 +67,9 @@ export function Onboarding() {
         householdId: householdId
       });
 
+      // Request permissions
+      await NotificationService.requestPermission();
+
       await refreshProfile();
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'households/users');
@@ -102,6 +106,9 @@ export function Onboarding() {
         points: 0,
         householdId: householdId
       });
+
+      // Request permissions
+      await NotificationService.requestPermission();
 
       await refreshProfile();
     } catch (err) {

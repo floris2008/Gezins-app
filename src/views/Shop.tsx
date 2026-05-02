@@ -6,7 +6,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { db, handleFirestoreError } from '../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, increment, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, doc, updateDoc, increment, deleteDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { Reward, OperationType } from '../types';
 import { 
   Plus, 
@@ -219,8 +219,8 @@ export function Shop() {
       }
 
       // 4. Notify parents
-      const parents = (await import('firebase/firestore')).query(collection(db, 'users'), where('householdId', '==', profile.householdId), where('role', '==', 'parent'));
-      const parentSnap = await (await import('firebase/firestore')).getDocs(parents);
+      const parentsQuery = query(collection(db, 'users'), where('householdId', '==', profile.householdId), where('role', '==', 'parent'));
+      const parentSnap = await getDocs(parentsQuery);
       
       for (const p of parentSnap.docs) {
         await addDoc(collection(db, 'notifications'), {
@@ -232,7 +232,7 @@ export function Shop() {
         });
       }
 
-      await refreshProfile();
+      if (refreshProfile) await refreshProfile();
       setClaimingReward(null);
     } catch (err) {
       handleFirestoreError(err, OperationType.UPDATE, `users/${profile.id}`);
