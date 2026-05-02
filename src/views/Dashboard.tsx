@@ -723,14 +723,12 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
               }}
               onDelete={async (id) => {
                 // Parents can delete tasks from here
-                if (confirm('Weet je zeker dat je deze taak wilt verwijderen?')) {
-                   try {
-                     const { deleteDoc, doc } = await import('firebase/firestore');
-                     await deleteDoc(doc(db, 'tasks', id));
-                     setSelectedTask(null);
-                   } catch (err) {
-                      console.error(err);
-                   }
+                try {
+                  const { deleteDoc, doc } = await import('firebase/firestore');
+                  await deleteDoc(doc(db, 'tasks', id));
+                  setSelectedTask(null);
+                } catch (err) {
+                   console.error(err);
                 }
               }}
             />

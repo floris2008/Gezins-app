@@ -292,7 +292,6 @@ export function Tasks() {
 
   const deleteTask = async (id: string) => {
     if (profile?.role !== 'parent') return;
-    if (!confirm('Weet je zeker dat je deze taak wilt verwijderen?')) return;
     try {
       await deleteDoc(doc(db, 'tasks', id));
     } catch (err) {

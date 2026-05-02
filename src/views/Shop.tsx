@@ -242,7 +242,6 @@ export function Shop() {
   const deleteReward = async (id: string | undefined) => {
     if (!id) return;
     if (profile?.role !== 'parent') return;
-    if (!confirm('Weet je zeker dat je deze beloning wilt verwijderen?')) return;
     try {
        await deleteDoc(doc(db, 'rewards', id));
     } catch (err) {
