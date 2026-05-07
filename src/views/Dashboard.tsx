@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { db, handleFirestoreError } from '../lib/firebase';
-import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, increment, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, increment, addDoc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore';
 import { UserProfile, Task, AppNotification, OperationType, HistoryEntry, Reward } from '../types';
 import { 
   Trophy, 
@@ -20,9 +20,14 @@ import {
   Gamepad,
   User,
   Plus,
+  Minus,
   CheckCircle2,
   Clock,
   ChevronRight,
+  Camera,
+  X,
+  KeyRound,
+  Trash2,
   Users as UsersIcon,
   CheckCircle as LucideCheckCircle,
   Star,
@@ -45,10 +50,60 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
   const [loading, setLoading] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [selectedTab, setSelectedTab] = useState<'tasks' | 'history' | 'actions'>('tasks');
+  const [userHistory, setUserHistory] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [userToRemove, setUserToRemove] = useState<UserProfile | null>(null);
   const [adjustAmount, setAdjustAmount] = useState(0);
+  const [adjustType, setAdjustType] = useState<'plus' | 'minus'>('plus');
   const [adjustReason, setAdjustReason] = useState('');
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+
+  useEffect(() => {
+    if (selectedUser) {
+      setHistoryLoading(true);
+      setSelectedTab('tasks');
+      const q = query(
+        collection(db, 'history'),
+        where('userId', '==', selectedUser.id),
+        where('householdId', '==', profile?.householdId),
+        orderBy('timestamp', 'desc'),
+        limit(10)
+      );
+      
+      const unsub = onSnapshot(q, (snap) => {
+        setUserHistory(snap.docs.map(d => ({ id: d.id, ...d.data() } as HistoryEntry)));
+        setHistoryLoading(false);
+      }, (err) => {
+        console.error('History fetch error:', err);
+        setHistoryLoading(false);
+      });
+      
+      return () => unsub();
+    } else {
+      setUserHistory([]);
+      setSelectedTab('tasks');
+    }
+  }, [selectedUser]);
+
+  const kickMember = async () => {
+    if (!userToRemove || profile?.role !== 'parent') return;
+    try {
+      if (userToRemove.id.startsWith('child_') || !userToRemove.email.includes('@')) {
+        await deleteDoc(doc(db, 'users', userToRemove.id));
+      } else {
+        await updateDoc(doc(db, 'users', userToRemove.id), {
+          householdId: null,
+          role: 'child'
+        });
+      }
+      setUserToRemove(null);
+      if (selectedUser?.id === userToRemove.id) setSelectedUser(null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `users/${userToRemove.id}`);
+    }
+  };
   const [isDirectCompleting, setIsDirectCompleting] = useState(false);
   const [proofUrl, setProofUrl] = useState('');
   const [recyclingTask, setRecyclingTask] = useState<Task | null>(null);
@@ -84,7 +139,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
     const unsubTasks = onSnapshot(qTasks, (snap) => {
       const allTasks = snap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
       setPendingTasks(allTasks.filter(t => t.status === 'pending'));
-      setActiveTasks(allTasks.filter(t => t.status === 'active'));
+      setActiveTasks(allTasks.filter(t => ['active', 'in_progress'].includes(t.status)));
       setLoading(false);
     }, (err) => {
       handleFirestoreError(err, OperationType.LIST, 'tasks');
@@ -223,16 +278,20 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
   const handleAdjustPoints = async () => {
     if (!selectedUser || !profile || !adjustReason) return;
     setIsAdjusting(true);
+    const finalAmount = adjustType === 'plus' ? Math.abs(adjustAmount) : -Math.abs(adjustAmount);
     try {
+      const currentPoints = selectedUser.points || 0;
+      const newPoints = Math.max(0, currentPoints + finalAmount);
+
       await updateDoc(doc(db, 'users', selectedUser.id), {
-        points: increment(adjustAmount)
+        points: newPoints
       });
 
       await addDoc(collection(db, 'history'), {
         userId: selectedUser.id,
         householdId: profile.householdId,
-        amount: Math.abs(adjustAmount),
-        type: adjustAmount > 0 ? 'earn' : 'spend',
+        amount: finalAmount,
+        type: finalAmount > 0 ? 'earn' : 'spend',
         description: adjustReason,
         timestamp: serverTimestamp()
       });
@@ -240,9 +299,9 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
       await addDoc(collection(db, 'notifications'), {
         userId: selectedUser.id,
         householdId: profile.householdId,
-        message: adjustAmount > 0 
-          ? `Fantastisch! Je hebt ${adjustAmount} bonus XP gekregen: ${adjustReason}`
-          : `Oei! Er is ${Math.abs(adjustAmount)} XP afgetrokken: ${adjustReason}`,
+        message: finalAmount > 0 
+          ? `Fantastisch! Je hebt ${finalAmount} bonus XP gekregen: ${adjustReason}`
+          : `Oei! Er is ${Math.abs(finalAmount)} XP afgetrokken: ${adjustReason}`,
         read: false,
         timestamp: serverTimestamp()
       });
@@ -253,7 +312,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
         await addDoc(collection(db, 'notifications'), {
           userId: p.id,
           householdId: profile.householdId,
-          message: `📢 XP van ${selectedUser.displayName} is aangepast door ${profile.displayName}: ${adjustAmount > 0 ? '+' : ''}${adjustAmount} (${adjustReason})`,
+          message: `📢 XP van ${selectedUser.displayName} is aangepast door ${profile.displayName}: ${finalAmount > 0 ? '+' : ''}${finalAmount} (${adjustReason})`,
           read: false,
           timestamp: serverTimestamp()
         });
@@ -435,6 +494,7 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                         <h3 className="text-lg font-black text-slate-900 leading-tight tracking-tight">{task.title}</h3>
                         <div className="flex items-center gap-2 mt-1">
                            <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">+{task.points} XP Wachtend</span>
+                           {task.requiresProof && <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[8px]"><Camera size={8} strokeWidth={3} /> Foto</span>}
                         </div>
                       </div>
                     </div>
@@ -554,6 +614,12 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 className="bg-white rounded-[3.5rem] w-full max-w-lg overflow-hidden shadow-2xl relative z-10 p-8 sm:p-12"
               >
+                <button 
+                  onClick={() => setSelectedUser(null)}
+                  className="absolute top-8 right-8 p-3 text-slate-400 hover:text-slate-600 rounded-2xl hover:bg-slate-100 transition-all z-20"
+                >
+                  <X size={24} />
+                </button>
                 <div className="flex flex-col items-center text-center">
                   <div className="w-24 h-24 rounded-[2.5rem] bg-indigo-50 flex items-center justify-center text-indigo-600 font-black text-4xl mb-6 shadow-inner">
                     {selectedUser.photoURL ? (
@@ -563,104 +629,269 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                     )}
                   </div>
                   <h3 className="text-3xl font-black text-slate-900 tracking-tighter mb-2">{selectedUser.displayName}</h3>
-                  <div className="bg-amber-100 px-6 py-2 rounded-2xl mb-8">
-                     <span className="text-sm font-black text-amber-800 uppercase tracking-wider">{selectedUser.points} XP</span>
+                  
+                  {/* Tab Switcher */}
+                  <div className="flex bg-slate-100 p-1.5 rounded-[2rem] w-full mb-8 mt-4">
+                    <button 
+                      onClick={() => setSelectedTab('tasks')}
+                      className={`flex-1 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${selectedTab === 'tasks' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Quests
+                    </button>
+                    <button 
+                      onClick={() => setSelectedTab('history')}
+                      className={`flex-1 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${selectedTab === 'history' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Historie
+                    </button>
+                    <button 
+                      onClick={() => setSelectedTab('actions')}
+                      className={`flex-1 py-3 rounded-[1.5rem] text-[10px] font-black uppercase tracking-widest transition-all ${selectedTab === 'actions' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      Acties
+                    </button>
                   </div>
 
-                  <div className="w-full space-y-6">
-                    {/* User's Active Tasks */}
-                    <div className="space-y-4 text-left">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 mb-4">Lopende Quests</p>
-                      <div className="space-y-3 max-h-[200px] overflow-y-auto px-2 no-scrollbar">
-                        {activeTasks.filter(t => 
-                          t.assignedTo === selectedUser.id || 
-                          (t.type === 'first_come' && t.distributionType === 'everyone_must' && !t.completedByList?.includes(selectedUser.id)) ||
-                          (t.type === 'first_come' && t.distributionType !== 'everyone_must')
-                        ).length > 0 ? (
-                          activeTasks.filter(t => 
-                            t.assignedTo === selectedUser.id || 
-                            (t.type === 'first_come' && t.distributionType === 'everyone_must' && !t.completedByList?.includes(selectedUser.id)) ||
-                            (t.type === 'first_come' && t.distributionType !== 'everyone_must')
-                          ).map(task => (
-                            <div key={task.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group">
-                              <div className="flex items-center gap-3">
-                                <span className="text-xl">{task.emoji || '✨'}</span>
-                                <div>
-                                  <p className="text-xs font-black text-slate-800">{task.title}</p>
-                                  <p className="text-[9px] font-bold text-amber-600">{task.points} XP</p>
-                                </div>
-                              </div>
-                              <ArrowRight size={14} className="text-slate-300 group-hover:text-indigo-600 transition-colors" />
+                  {selectedTab === 'tasks' && (
+                    <div className="w-full space-y-6">
+                      <div className="flex flex-col items-center gap-3 mb-4">
+                        <div className="flex gap-3">
+                          <div className="bg-amber-100 px-6 py-2 rounded-2xl">
+                            <span className="text-sm font-black text-amber-800 uppercase tracking-wider">{selectedUser.points} XP</span>
+                          </div>
+                          {selectedUser.role === 'child' && selectedUser.loginCode && (
+                            <div className="bg-emerald-100 px-6 py-2 rounded-2xl flex items-center gap-2 border border-emerald-200 shadow-sm">
+                              <KeyRound size={16} className="text-emerald-600" />
+                              <span className="text-sm font-mono font-black text-emerald-800 uppercase tracking-widest">{selectedUser.loginCode}</span>
                             </div>
-                          ))
-                        ) : (
-                          <p className="text-center py-4 text-slate-400 text-xs font-bold italic bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                             Geen actieve quests
+                          )}
+                        </div>
+                        {selectedUser.role === 'child' && selectedUser.loginCode && (
+                          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+                            Login Code voor dit profiel
                           </p>
                         )}
                       </div>
-                    </div>
 
-                      <div className="space-y-4 pt-4 border-t border-slate-50">
-                        <div className="flex justify-between items-center px-4">
-                           <p className={`text-xs font-black uppercase tracking-widest transition-all ${adjustAmount < 0 ? 'text-red-500' : 'text-slate-300'}`}>
-                              {t('dashboard.punish')}
-                           </p>
-                           <p className={`text-xs font-black uppercase tracking-widest transition-all ${adjustAmount > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>
-                              {t('dashboard.reward')}
-                           </p>
+                      {/* User's Active Tasks */}
+                      <div className="space-y-4 text-left">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 mb-4">Lopende Quests</p>
+                        <div className="space-y-3 max-h-[300px] overflow-y-auto px-2 no-scrollbar">
+                          {activeTasks.filter(t => 
+                            t.assignedTo === selectedUser.id || 
+                            (t.type === 'first_come' && t.distributionType === 'everyone_must' && !t.completedByList?.includes(selectedUser.id)) ||
+                            (t.type === 'first_come' && t.distributionType !== 'everyone_must')
+                          ).length > 0 ? (
+                            activeTasks.filter(t => 
+                              t.assignedTo === selectedUser.id || 
+                              (t.type === 'first_come' && t.distributionType === 'everyone_must' && !t.completedByList?.includes(selectedUser.id)) ||
+                              (t.type === 'first_come' && t.distributionType !== 'everyone_must')
+                            ).map(task => (
+                              <div key={task.id} className="p-5 bg-slate-50 border border-slate-100 rounded-3xl flex items-center justify-between group">
+                                <div className="flex items-center gap-4">
+                                  <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-2xl shadow-sm border border-slate-50">
+                                    {task.emoji || '✨'}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-black text-slate-800 line-clamp-1">{task.title}</p>
+                                    <p className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">{task.points} XP</p>
+                                  </div>
+                                </div>
+                                <div className="bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
+                                  <ArrowRight size={14} className="text-slate-300 group-hover:text-indigo-600 transition-colors" />
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-center py-12 px-6 bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-200">
+                               <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-200 mx-auto mb-4 border border-slate-50">
+                                 <Clock size={20} />
+                               </div>
+                               <p className="text-slate-400 text-xs font-black uppercase tracking-widest">Geen actieve quests</p>
+                            </div>
+                          )}
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedTab === 'history' && (
+                    <div className="w-full space-y-4 text-left">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 mb-2">Activiteit</p>
+                      <div className="space-y-3 max-h-[400px] overflow-y-auto px-2 no-scrollbar">
+                        {historyLoading ? (
+                          <div className="space-y-3">
+                            {[1,2,3].map(i => (
+                              <div key={i} className="h-20 bg-slate-50 rounded-3xl animate-pulse" />
+                            ))}
+                          </div>
+                        ) : userHistory.length > 0 ? (
+                          userHistory.map(entry => (
+                            <div key={entry.id} className="p-4 bg-slate-50 border border-slate-100 rounded-3xl flex items-center justify-between">
+                              <div className="flex items-center gap-4">
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm border border-white/50 ${
+                                  entry.type === 'earn' ? 'bg-emerald-50 text-emerald-600' : 
+                                  entry.type === 'spend' ? 'bg-amber-50 text-amber-600' : 
+                                  'bg-indigo-50 text-indigo-600'
+                                }`}>
+                                  {entry.type === 'earn' ? '✨' : entry.type === 'spend' ? '🎁' : '⚙️'}
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-black text-slate-800 line-clamp-1">{entry.description}</p>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                    {entry.timestamp?.toDate ? format(entry.timestamp.toDate(), 'd MMM, HH:mm', { locale: nl }) : 'Net geplaatst'}
+                                  </p>
+                                </div>
+                              </div>
+                              {(() => {
+                                const isPositive = entry.amount > 0 && entry.type !== 'spend';
+                                return (
+                                  <div className={`text-sm font-black px-4 py-2 rounded-2xl shadow-sm border whitespace-nowrap ${
+                                    isPositive ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'
+                                  }`}>
+                                    {isPositive ? '+' : '-'}{Math.abs(entry.amount)} XP
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-center py-12 px-6 bg-slate-50 rounded-[2.5rem] border border-dashed border-slate-200">
+                             <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-slate-200 mx-auto mb-4 border border-slate-50">
+                               <Sparkles size={20} />
+                             </div>
+                             <p className="text-slate-400 text-xs font-black uppercase tracking-widest">Nog geen activiteiten</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedTab === 'actions' && (
+                    <div className="w-full space-y-6">
+                      <div className="space-y-4 pt-4">
+                        <div className="flex justify-center gap-2 p-1 bg-slate-100 rounded-2xl">
+                          <button
+                            onClick={() => setAdjustType('plus')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black transition-all ${
+                              adjustType === 'plus' 
+                                ? 'bg-emerald-500 text-white shadow-lg' 
+                                : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                          >
+                            <Plus size={18} strokeWidth={3} />
+                            Belonen
+                          </button>
+                          <button
+                            onClick={() => setAdjustType('minus')}
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black transition-all ${
+                              adjustType === 'minus' 
+                                ? 'bg-red-500 text-white shadow-lg' 
+                                : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                          >
+                            <Minus size={18} strokeWidth={3} />
+                            Straffen
+                          </button>
+                        </div>
+
                         <div className="relative">
                           <input 
                             type="number"
                             value={adjustAmount === 0 ? '' : adjustAmount}
-                            onChange={(e) => setAdjustAmount(Number(e.target.value))}
+                            onChange={(e) => setAdjustAmount(Math.abs(Number(e.target.value)))}
                             className={`w-full p-5 border rounded-[2rem] focus:ring-4 focus:outline-none font-black text-center transition-all ${
-                              adjustAmount < 0 
+                              adjustType === 'minus' 
                                 ? 'bg-red-50 border-red-200 text-red-600 focus:ring-red-100' 
-                                : adjustAmount > 0 
-                                  ? 'bg-emerald-50 border-emerald-200 text-emerald-600 focus:ring-emerald-100'
-                                  : 'bg-slate-50 border-slate-100 text-slate-800 focus:ring-indigo-100'
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-600 focus:ring-emerald-100'
                             }`}
                             placeholder="0"
                           />
+                          <div className="absolute left-6 top-1/2 -translate-y-1/2 font-black text-slate-400">
+                            {adjustType === 'plus' ? '+' : '-'}
+                          </div>
                           <div className="absolute right-6 top-1/2 -translate-y-1/2 font-black text-slate-400">XP</div>
                         </div>
                         <div className="flex gap-2">
-                          <button onClick={() => setAdjustAmount(25)} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">+25</button>
-                          <button onClick={() => setAdjustAmount(50)} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">+50</button>
-                          <button onClick={() => setAdjustAmount(100)} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all">+100</button>
-                          <button onClick={() => setAdjustAmount(-25)} className="flex-1 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-red-400 hover:bg-red-50 transition-all">-25</button>
+                          <button onClick={() => { setAdjustType('plus'); setAdjustAmount(25); }} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all">+25</button>
+                          <button onClick={() => { setAdjustType('plus'); setAdjustAmount(50); }} className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 transition-all">+50</button>
+                          <button onClick={() => { setAdjustType('minus'); setAdjustAmount(25); }} className="flex-1 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all">-25</button>
+                          <button onClick={() => { setAdjustType('minus'); setAdjustAmount(50); }} className="flex-1 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-black text-slate-400 hover:bg-red-50 hover:text-red-600 transition-all">-50</button>
                         </div>
                       </div>
                     
-                    <div className="space-y-2 text-left">
-                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 text-center block">Waarom?</label>
-                       <input 
-                        type="text"
-                        value={adjustReason}
-                        onChange={(e) => setAdjustReason(e.target.value)}
-                        placeholder="bijv. Goed geholpen met tafel dekken"
-                        className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] focus:ring-4 focus:ring-indigo-100 focus:outline-none font-bold text-slate-800 transition-all text-center"
-                       />
-                    </div>
+                      <div className="space-y-2 text-left">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] px-2 text-center block">Waarom?</label>
+                        <input 
+                          type="text"
+                          value={adjustReason}
+                          onChange={(e) => setAdjustReason(e.target.value)}
+                          placeholder="bijv. Goed geholpen met tafel dekken"
+                          className="w-full p-5 bg-slate-50 border border-slate-100 rounded-[2rem] focus:ring-4 focus:ring-indigo-100 focus:outline-none font-bold text-slate-800 transition-all text-center"
+                        />
+                      </div>
 
-                    <div className="flex gap-4 pt-4">
-                      <button 
-                        onClick={() => setSelectedUser(null)}
-                        className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
-                      >
-                        Annuleer
-                      </button>
-                      <button 
-                        onClick={handleAdjustPoints}
-                        disabled={!adjustReason || adjustAmount === 0 || isAdjusting}
-                        className="flex-1 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isAdjusting ? 'Bezig...' : 'Bevestigen'}
-                      </button>
+                      <div className="flex gap-4 pt-4">
+                        <button 
+                          onClick={() => setSelectedUser(null)}
+                          className="flex-1 py-5 bg-slate-100 text-slate-500 rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+                        >
+                          Annuleer
+                        </button>
+                        <button 
+                          onClick={handleAdjustPoints}
+                          disabled={!adjustReason || adjustAmount === 0 || isAdjusting}
+                          className="flex-1 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {isAdjusting ? 'Bezig...' : 'Bevestigen'}
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+  
+        {/* Remove Member Confirmation Modal */}
+        <AnimatePresence>
+          {userToRemove && (
+            <div className="fixed inset-0 z-[305] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setUserToRemove(null)}
+                className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-white rounded-[2.5rem] w-full max-w-md overflow-hidden shadow-2xl relative z-10 p-8 text-center"
+              >
+                <div className="w-20 h-20 bg-red-50 text-red-600 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-inner">
+                  <Trash2 size={32} />
+                </div>
+                <h3 className="text-2xl font-black text-slate-900 mb-2">Lid Verwijderen?</h3>
+                <p className="text-slate-500 font-medium mb-8">
+                  Weet je zeker dat je <span className="font-bold text-slate-800">{userToRemove.displayName}</span> wilt verwijderen uit het gezin?
+                </p>
+                
+                <div className="flex gap-4">
+                  <button
+                    onClick={() => setUserToRemove(null)}
+                    className="flex-1 py-4 bg-slate-100 text-slate-500 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-all"
+                  >
+                    Annuleren
+                  </button>
+                  <button
+                    onClick={kickMember}
+                    className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-100"
+                  >
+                    Verwijderen
+                  </button>
                 </div>
               </motion.div>
             </div>
@@ -691,8 +922,9 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{task.title}</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                      {task.type === 'individual' ? 'Privé Quest' : 'Open Quest'} • <span className="text-indigo-500">+{task.points} XP</span>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2">
+                      <span>{task.type === 'individual' ? 'Privé Quest' : 'Open Quest'} • <span className="text-indigo-500">+{task.points} XP</span></span>
+                      {task.requiresProof && <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[8px]"><Camera size={8} strokeWidth={3} /> Foto</span>}
                     </p>
                   </div>
                 </div>
@@ -840,7 +1072,10 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{task.title}</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{t('dashboard.morning_quest')}</p>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2">
+                      <span>{t('dashboard.morning_quest')}</span>
+                      {task.requiresProof && <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[8px]"><Camera size={8} strokeWidth={3} /> Foto</span>}
+                    </p>
                   </div>
                </div>
                <div className="flex items-center gap-4">
@@ -884,8 +1119,9 @@ export function Dashboard({ onNavigate }: { onNavigate?: (view: any) => void }) 
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900 tracking-tight leading-tight">{task.title}</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
-                       {task.distributionType === 'everyone_must' ? t('dashboard.together_quest') : t('dashboard.family_quest')}
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-2">
+                       <span>{task.distributionType === 'everyone_must' ? t('dashboard.together_quest') : t('dashboard.family_quest')}</span>
+                       {task.requiresProof && <span className="flex items-center gap-1 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[8px]"><Camera size={8} strokeWidth={3} /> Foto</span>}
                     </p>
                   </div>
                </div>

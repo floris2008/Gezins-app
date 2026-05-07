@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { db, handleFirestoreError } from '../lib/firebase';
-import { doc, setDoc, query, collection, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, query, collection, where, getDocs, serverTimestamp, getDoc } from 'firebase/firestore';
 import { UserRole, OperationType } from '../types';
 import { Home, Users, ArrowRight, CheckCircle2, Sparkles, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,11 +23,17 @@ export function Onboarding() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const code = params.get('invite');
+    let code = params.get('invite');
+    
+    if (!code) {
+      code = localStorage.getItem('pendingInvite');
+    }
+
     if (code) {
       setInviteCode(code.toUpperCase());
       setStep('joining');
       setRole('child'); // Default role for invitees
+      localStorage.removeItem('pendingInvite');
     }
   }, []);
 
@@ -85,31 +91,47 @@ export function Onboarding() {
     setError('');
 
     try {
-      const q = query(collection(db, 'households'), where('inviteCode', '==', inviteCode.toUpperCase()));
-      const querySnapshot = await getDocs(q);
+      // 1. Try checking if it's a direct Household ID first
+      const householdRef = doc(db, 'households', inviteCode);
+      const householdSnap = await getDoc(householdRef);
+      let householdId = '';
 
-      if (querySnapshot.empty) {
-        setError('Ongeldige uitnodigingscode.');
+      if (householdSnap.exists()) {
+        householdId = householdSnap.id;
+      } else {
+        // 2. If not found, try checking if it's an invite code
+        const q = query(collection(db, 'households'), where('inviteCode', '==', inviteCode.toUpperCase()));
+        const querySnapshot = await getDocs(q);
+        if (!querySnapshot.empty) {
+          householdId = querySnapshot.docs[0].id;
+        }
+      }
+
+      if (!householdId) {
+        setError('Huishouden niet gevonden. Controleer de ID of code.');
         setIsSubmitting(false);
         return;
       }
 
-      const household = querySnapshot.docs[0];
-      const householdId = household.id;
-
       // 1. Create or update user profile
-      await setDoc(doc(db, 'users', user.uid), {
-        displayName: user.displayName || 'Kind',
+      const userRef = doc(db, 'users', user.uid);
+      await setDoc(userRef, {
+        displayName: user.displayName || (role === 'parent' ? 'Ouder' : 'Kind'),
         photoURL: user.photoURL || '',
         email: user.email,
-        role: 'child', // Initially child when joining
+        role: role, 
         points: 0,
-        householdId: householdId
-      });
+        householdId: householdId,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       // Request permissions
       await NotificationService.requestPermission();
 
+      // Clear pending invite
+      localStorage.removeItem('pendingInvite');
+
+      // Force profile refresh
       await refreshProfile();
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'users');
@@ -141,8 +163,8 @@ export function Onboarding() {
               exit={{ opacity: 0, y: -20 }}
             >
               <div className="text-center mb-10">
-                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Welkom bij je nieuwe gezin.</h2>
-                <p className="text-slate-500 font-medium tracking-tight">Laten we beginnen met wie jij bent.</p>
+                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Kies je rol.</h2>
+                <p className="text-slate-500 font-medium tracking-tight">Ben je een ouder of een kind?</p>
               </div>
               
               <div className="space-y-4">
@@ -155,7 +177,7 @@ export function Onboarding() {
                   </div>
                   <div className="flex-1">
                     <span className="block font-black text-lg text-slate-800">Ik ben een ouder</span>
-                    <span className="text-sm text-slate-500 font-medium">De baas over taken en punten.</span>
+                    <span className="text-sm text-slate-500 font-medium">Beheer taken en beloningen voor je gezin.</span>
                   </div>
                   <ArrowRight size={20} className="text-slate-300 group-hover:text-indigo-600 group-hover:translate-x-1 transition-all" />
                 </button>
@@ -169,7 +191,7 @@ export function Onboarding() {
                   </div>
                   <div className="flex-1">
                     <span className="block font-black text-lg text-slate-800">Ik ben een kind</span>
-                    <span className="text-sm text-slate-500 font-medium">Klaar om punten te verzamelen!</span>
+                    <span className="text-sm text-slate-500 font-medium">Voer taken uit en verdien punten!</span>
                   </div>
                   <ArrowRight size={20} className="text-slate-300 group-hover:text-emerald-600 group-hover:translate-x-1 transition-all" />
                 </button>
@@ -186,21 +208,21 @@ export function Onboarding() {
             >
               <div className="text-center mb-10">
                 <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Klaar om te starten?</h2>
-                <p className="text-slate-500 font-medium">Kies hoe je dit huishouden wilt inrichten.</p>
+                <p className="text-slate-500 font-medium">Maak een nieuw gezin aan of sluit je aan bij een bestaand gezin.</p>
               </div>
               <div className="space-y-4">
                 <button
                   onClick={() => setStep('creating')}
                   className="w-full p-6 bg-indigo-600 text-white rounded-[2rem] font-black text-lg flex items-center justify-center gap-3 hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 group"
                 >
-                  Nieuw Gezin Starten
+                  Nieuw Gezin Aanmaken
                   <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />
                 </button>
                 <button
                   onClick={() => setStep('joining')}
                   className="w-full p-6 bg-slate-50 text-slate-600 rounded-[2rem] font-black hover:bg-slate-100 transition-all"
                 >
-                  Bestaand Gezin Joinen
+                  Koppelen aan Huishouden ID
                 </button>
                 <div className="text-center pt-4">
                    <button
@@ -222,16 +244,16 @@ export function Onboarding() {
               exit={{ opacity: 0, y: -20 }}
             >
               <div className="text-center mb-10">
-                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Huishoudnaam</h2>
-                <p className="text-slate-500 font-medium">Geef jullie nieuwe digitale thuis een naam.</p>
+                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Naam van je gezin</h2>
+                <p className="text-slate-500 font-medium">Hoe heet jullie gezin?</p>
               </div>
               
               <div className="space-y-6">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Naam van het gezin</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Bijv. Familie de Vries</label>
                   <input
                     type="text"
-                    placeholder="Bijv. Familie de Vries"
+                    placeholder="Gezinsnaam"
                     value={householdName}
                     onChange={(e) => setHouseholdName(e.target.value)}
                     className="w-full p-5 bg-slate-50 border border-slate-200 rounded-[2rem] focus:ring-4 focus:ring-indigo-100 focus:outline-none transition-all font-bold text-slate-800"
@@ -242,7 +264,7 @@ export function Onboarding() {
                   onClick={handleCreateHousehold}
                   className="w-full p-6 bg-indigo-600 text-white rounded-[2rem] font-black text-lg disabled:opacity-50 flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all"
                 >
-                  {isSubmitting ? 'Bezig met maken...' : 'Aan de slag!'}
+                  {isSubmitting ? 'Bezig met maken...' : 'Huishouden Aanmaken'}
                   {!isSubmitting && <CheckCircle2 size={24} />}
                 </button>
                 <div className="text-center">
@@ -265,20 +287,19 @@ export function Onboarding() {
               exit={{ opacity: 0, y: -20 }}
             >
               <div className="text-center mb-10">
-                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Join je team.</h2>
-                <p className="text-slate-500 font-medium">Voer de code in die je ouders hebben gedeeld.</p>
+                <h2 className="text-3xl font-black text-slate-900 mb-2 tracking-tight">Koppel aan gezin.</h2>
+                <p className="text-slate-500 font-medium">Voer de Huishouden ID of Uitnodigingscode in.</p>
               </div>
               
               <div className="space-y-6">
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 text-center block">6-Cijferige Code</label>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2 text-center block">ID of Code</label>
                   <input
                     type="text"
-                    placeholder="ABC123"
-                    maxLength={6}
+                    placeholder="ID / CODE"
                     value={inviteCode}
-                    onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-                    className="w-full p-8 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 focus:outline-none transition-all text-center text-5xl font-black tracking-[0.3em] text-indigo-900"
+                    onChange={(e) => setInviteCode(e.target.value)}
+                    className="w-full p-6 bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 focus:outline-none transition-all text-center text-3xl font-black tracking-[0.1em] text-indigo-900"
                   />
                 </div>
                 {error && (
@@ -287,11 +308,11 @@ export function Onboarding() {
                   </motion.p>
                 )}
                 <button
-                  disabled={inviteCode.length < 6 || isSubmitting}
+                  disabled={!inviteCode || isSubmitting}
                   onClick={handleJoinHousehold}
                   className="w-full p-6 bg-indigo-600 text-white rounded-[2.5rem] font-black text-lg disabled:opacity-50 flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all"
                 >
-                  {isSubmitting ? 'Bezig met checken...' : 'Nu Lid Worden'}
+                  {isSubmitting ? 'Bezig met checken...' : 'Koppelen'}
                   {!isSubmitting && <CheckCircle2 size={24} />}
                 </button>
                 <div className="text-center">

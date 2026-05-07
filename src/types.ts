@@ -14,6 +14,8 @@ export interface UserProfile {
   householdId?: string;
   targetRewardId?: string;
   email: string;
+  loginCode?: string;
+  parentId?: string;
 }
 
 export interface Household {

@@ -571,6 +571,11 @@ export function Shop() {
 
                <div className="p-8 pb-10 flex-1 flex flex-col items-center text-center">
                 <h3 className="text-xl font-black text-slate-900 tracking-tighter mb-2 group-hover:text-indigo-600 transition-colors">{reward.title}</h3>
+                <div className="flex gap-2 mb-3">
+                  <span className={`px-3 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${reward.usageType === 'once' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                    {reward.usageType === 'once' ? 'Eénmalig' : 'Altijd'}
+                  </span>
+                </div>
                 <p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.2em] mb-4">Officiële Familie Prijs</p>
                 
                 <p className="text-slate-500 font-medium text-sm leading-relaxed mb-8 flex-1 line-clamp-2">

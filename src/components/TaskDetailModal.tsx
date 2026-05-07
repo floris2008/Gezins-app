@@ -89,6 +89,11 @@ export function TaskDetailModal({ task, onClose, profile, members, onStartEdit, 
                        <span className="px-3 py-0.5 sm:py-1 bg-slate-100 text-slate-500 text-[8px] sm:text-[10px] font-black rounded-full uppercase tracking-widest">
                           {task.type === 'individual' ? 'Individueel' : 'Gezins Quest'}
                        </span>
+                       {task.requiresProof && (
+                         <span className="px-3 py-0.5 sm:py-1 bg-amber-50 text-amber-600 text-[8px] sm:text-[10px] font-black rounded-full uppercase tracking-widest flex items-center gap-1">
+                            <Camera size={10} /> Foto Bewijs
+                         </span>
+                       )}
                     </div>
                   </div>
                 </div>

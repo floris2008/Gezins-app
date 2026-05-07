@@ -11,7 +11,9 @@
         "points": { "type": "number" },
         "householdId": { "type": "string" },
         "targetRewardId": { "type": "string" },
-        "email": { "type": "string" }
+        "email": { "type": "string" },
+        "loginCode": { "type": "string" },
+        "parentId": { "type": "string" }
       },
       "required": ["displayName", "role", "points", "email"]
     },

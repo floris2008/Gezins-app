@@ -3,12 +3,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import { useState, useEffect, FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import { Sparkles, CheckCircle2, ShoppingBag, ShieldCheck } from 'lucide-react';
-import { motion } from 'motion/react';
+import { Sparkles, CheckCircle2, ShoppingBag, ShieldCheck, KeyRound, ArrowRight, Loader2, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 export function Landing() {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithCode } = useAuth();
+  const [showChildLogin, setShowChildLogin] = useState(false);
+  const [childCode, setChildCode] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('invite');
+    if (code) {
+      localStorage.setItem('pendingInvite', code.toUpperCase());
+      setInviteCode(code.toUpperCase());
+    }
+  }, []);
+
+  const handleChildLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    if (childCode.length < 4) return;
+    
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await signInWithCode(childCode);
+    } catch (err: any) {
+      setError(err.message || 'Ongeldige code. Vraag je ouders om de code.');
+      setIsSubmitting(false);
+    }
+  };
 
   const features = [
     {
@@ -47,12 +76,6 @@ export function Landing() {
           </div>
           <span className="text-xl font-black text-slate-800 tracking-tighter">FamilyChores</span>
         </div>
-        <button 
-          onClick={signInWithGoogle}
-          className="px-6 py-2 bg-white text-slate-800 rounded-xl font-bold text-sm shadow-sm border border-slate-100 hover:shadow-md transition-all"
-        >
-          Inloggen
-        </button>
       </nav>
 
       {/* Hero Section */}
@@ -80,16 +103,88 @@ export function Landing() {
               Het moderne platform voor gezinnen om taken te organiseren en kinderen te motiveren met een slim beloningssysteem.
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={signInWithGoogle}
-                className="inline-flex items-center justify-center gap-4 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-lg hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-200 active:scale-95 group"
-              >
-                <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center">
-                   <img src="https://www.google.com/favicon.ico" alt="Google" className="w-3.5 h-3.5" />
-                </div>
-                Starten met Google
-              </button>
+            <div className="flex flex-col items-center gap-6 justify-center">
+              {inviteCode && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-2xl flex items-center gap-3 shadow-xl mb-4 font-bold"
+                >
+                  <Users size={20} />
+                  <span>Je bent uitgenodigd voor een gezin!</span>
+                </motion.div>
+              )}
+              <AnimatePresence mode="wait">
+                {!showChildLogin ? (
+                  <motion.div
+                    key="standard"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="flex flex-col sm:flex-row gap-4 w-full justify-center max-w-2xl"
+                  >
+                    <button
+                      onClick={signInWithGoogle}
+                      className="flex-1 inline-flex items-center justify-center gap-4 px-10 py-5 bg-indigo-600 text-white rounded-[2rem] font-black text-lg hover:bg-indigo-700 transition-all shadow-2xl shadow-indigo-200 active:scale-95 group"
+                    >
+                      <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shrink-0">
+                        <img src="https://www.google.com/favicon.ico" alt="Google" className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="truncate">Inloggen met Google</span>
+                    </button>
+                    
+                    <button
+                      onClick={() => setShowChildLogin(true)}
+                      className="flex-1 inline-flex items-center justify-center gap-4 px-10 py-5 bg-white text-slate-800 rounded-[2rem] font-black text-lg border-2 border-slate-100 hover:border-indigo-600 transition-all active:scale-95 group"
+                    >
+                      <KeyRound className="text-indigo-600 shrink-0" size={24} />
+                      <span className="truncate">Inloggen als kind door ouder</span>
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="child"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="w-full max-w-md bg-white p-8 rounded-[3rem] shadow-2xl shadow-indigo-100 border border-indigo-50"
+                  >
+                    <h3 className="text-xl font-black text-slate-900 mb-2">Kind Login</h3>
+                    <p className="text-slate-500 font-medium text-sm mb-6">Voer de 6-cijferige code in die je van je ouders hebt gekregen.</p>
+                    
+                    <form onSubmit={handleChildLogin} className="space-y-4">
+                      <div>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          placeholder="ABCDEF"
+                          value={childCode}
+                          onChange={(e) => setChildCode(e.target.value.toUpperCase())}
+                          className="w-full px-6 py-5 bg-slate-50 border-2 border-transparent focus:border-indigo-600 rounded-2xl text-center text-3xl font-black tracking-[0.5em] text-slate-900 placeholder:text-slate-200 outline-none transition-all"
+                        />
+                        {error && <p className="text-red-500 text-xs font-bold mt-2">{error}</p>}
+                      </div>
+                      
+                      <button
+                        type="submit"
+                        disabled={isSubmitting || childCode.length < 4}
+                        className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-lg shadow-indigo-100 flex items-center justify-center gap-3 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {isSubmitting ? <Loader2 className="animate-spin" /> : <span>Inloggen</span>}
+                        {!isSubmitting && <ArrowRight size={20} />}
+                      </button>
+                      
+                      <button
+                        type="button"
+                        onClick={() => setShowChildLogin(false)}
+                        className="w-full py-2 text-slate-400 font-bold text-xs uppercase tracking-widest hover:text-indigo-600 transition-colors"
+                      >
+                        Terug naar Ouder-inlog
+                      </button>
+                    </form>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </motion.div>
         </div>

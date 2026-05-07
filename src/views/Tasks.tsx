@@ -6,7 +6,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { db, handleFirestoreError } from '../lib/firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { Task, OperationType } from '../types';
 import { 
   Plus, 

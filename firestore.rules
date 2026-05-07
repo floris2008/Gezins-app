@@ -29,27 +29,31 @@ service cloud.firestore {
     // 1. Validation Blueprints
 
     function isValidUser(data) {
-      return data.keys().hasAll(['displayName', 'role', 'points', 'email'])
-        && data.displayName is string && data.displayName.size() <= 100
+      return data.displayName is string && data.displayName.size() <= 100
         && data.role in ['parent', 'child']
         && data.points is number
         && data.email is string && data.email.size() <= 256
-        && (!data.keys().hasAny(['householdId']) || data.householdId is string)
-        && (!data.keys().hasAny(['photoURL']) || data.photoURL is string)
-        && (!data.keys().hasAny(['targetRewardId']) || data.targetRewardId is string);
+        && (!data.keys().hasAny(['householdId']) || data.householdId == null || data.householdId is string)
+        && (!data.keys().hasAny(['photoURL']) || data.photoURL == null || data.photoURL is string)
+        && (!data.keys().hasAny(['targetRewardId']) || data.targetRewardId == null || data.targetRewardId is string)
+        && (!data.keys().hasAny(['loginCode']) || data.loginCode == null || data.loginCode is string)
+        && (!data.keys().hasAny(['parentId']) || data.parentId == null || data.parentId is string)
+        && (!data.keys().hasAny(['linkedUid']) || data.linkedUid == null || data.linkedUid is string)
+        && (!data.keys().hasAny(['id']) || data.id is string)
+        && (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp)
+        && (!data.keys().hasAny(['updatedAt']) || data.updatedAt is timestamp);
     }
 
     function isValidHousehold(data) {
       return data.keys().hasAll(['name', 'inviteCode', 'adminId', 'createdAt'])
         && data.name is string && data.name.size() <= 100
         && data.inviteCode is string && data.inviteCode.size() <= 20
-        && data.adminId == request.auth.uid
+        && (data.adminId == request.auth.uid || isParent())
         && data.createdAt == request.time;
     }
 
     function isValidTask(data) {
-      return data.keys().hasAll(['title', 'points', 'type', 'householdId', 'status', 'updatedAt'])
-        && data.title is string && data.title.size() <= 200
+      return data.title is string && data.title.size() <= 200
         && data.points is number && data.points >= 0
         && data.type in ['individual', 'first_come']
         && data.householdId is string
@@ -66,7 +70,7 @@ service cloud.firestore {
 
     function isValidHistory(data) {
       return data.keys().hasAll(['userId', 'householdId', 'amount', 'type', 'description', 'timestamp'])
-        && data.userId == request.auth.uid
+        && (data.userId == request.auth.uid || isParent())
         && data.householdId is string
         && data.amount is number
         && data.type in ['earn', 'spend', 'adj']
@@ -86,18 +90,23 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if isSignedIn() && resource.data.householdId == getProfile(request.auth.uid).householdId;
-      allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if (isOwner(userId) || (isParent() && existing().householdId == getProfile(request.auth.uid).householdId)) && (
-        // Action: Join Household (Self)
-        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['householdId']) && isValidUser(incoming())) ||
-        // Action: Update Points/Target (Owner or Parent)
-        (incoming().diff(existing()).affectedKeys().hasAny(['points', 'targetRewardId']) && isValidUser(incoming()))
+      allow list: if isSignedIn() && (
+        resource.data.householdId == getProfile(request.auth.uid).householdId ||
+        resource.data.loginCode != null
       );
+      allow create: if (isOwner(userId) || isParent()) && isValidUser(incoming());
+      allow update: if (isOwner(userId) || isParent()) && (
+        // Action: Join/Setup Household (Self)
+        (isOwner(userId) && isValidUser(incoming())) ||
+        // Action: Admin Parent update Child
+        (isParent() && existing().householdId == getProfile(request.auth.uid).householdId && isValidUser(incoming()))
+      );
+      allow delete: if isParent() && existing().householdId == getProfile(request.auth.uid).householdId;
     }
 
     match /households/{householdId} {
       allow get: if isSignedIn();
+      allow list: if isSignedIn();
       allow create: if isSignedIn() && isValidHousehold(incoming());
       allow update: if isSignedIn() && (existing().adminId == request.auth.uid || isParent()) && isValidHousehold(incoming());
     }
